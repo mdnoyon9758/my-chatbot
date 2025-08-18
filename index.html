@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-AI Chatbot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://js.puter.com/v2/"></script>
+</head>
+<body>
+    <div id="chat-container">
+        <header>
+            <h2>Multi-AI Chatbot</h2>
+        </header>
+        <div id="chat-window">
+            <div id="message-container"></div>
+        </div>
+        <div id="model-selector-container">
+            <label for="model-selector">Choose a model:</label>
+            <select id="model-selector">
+                <option value="default" selected>Default (gpt-4.1-nano)</option>
+                <option value="deepseek-reasoner">Deep Seek Reasoner (Reasoning)</option>
+                <option value="claude-3-5-sonnet">Claude 3.5 Sonnet (Analysis)</option>
+                <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (Research)</option>
+                <option value="grok-beta">Grok (Research)</option>
+                <option value="gpt-4o">ChatGPT-4o (Output)</option>
+            </select>
+        </div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
