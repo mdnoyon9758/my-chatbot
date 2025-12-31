@@ -1,0 +1,10 @@
+name: Keep HF Space Alive
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Every 15 minutes
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -s https://himu1780-documint.hf.space
+      - run: curl -s https://himu1780-documint-train.hf.space
