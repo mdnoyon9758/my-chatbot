@@ -1,1 +1,31 @@
+# Build outputs
+android_apk/Pocket Ai Studio/app/build/
+android_apk/Pocket Ai Studio/.cxx/
+android_apk/Pocket Ai Studio/build/
 
+# llama.cpp source (cloned at build time, ~196MB)
+android_apk/Pocket Ai Studio/app/src/main/cpp/llama.cpp/
+
+# Build cache (.so files - will be regenerated)
+android_apk/build_cache/
+
+# Gradle
+android_apk/Pocket Ai Studio/.gradle/
+android_apk/Pocket Ai Studio/gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+android_apk/Pocket Ai Studio/.idea/
+*.iml
+.DS_Store
+
+# APK releases (uploaded via GitHub Releases, not committed)
+releases/
+
+# Memory/session data
+.mimocode/
+
+# Java heap dumps
+*.hprof
+
+# Compiled object files in cpp dir
+android_apk/Pocket Ai Studio/app/src/main/cpp/build*/

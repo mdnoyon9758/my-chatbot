@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- AI brain/circuit icon -->
+    <group
+        android:translateX="22"
+        android:translateY="22">
+        <!-- Outer circle -->
+        <path
+            android:pathData="M32,4C16.536,4 4,16.536 4,32s12.536,28 28,28s28,-12.536 28,-28S47.464,4 32,4z"
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.9"/>
+        <!-- Inner AI symbol -->
+        <path
+            android:pathData="M32,16c-8.837,0 -16,7.163 -16,16s7.163,16 16,16s16,-7.163 16,-16S40.837,16 32,16zM40,36h-4v4h-4v-4h-4v-4h4v-4h4v4h4v4zM28,28h-4v-4h4v4zM36,24h-4v-4h4v4zM28,36h-4v-4h4v4zM36,32h-4v-4h4v4z"
+            android:fillColor="#2196F3"
+            android:fillAlpha="0.95"/>
+    </group>
+</vector>
