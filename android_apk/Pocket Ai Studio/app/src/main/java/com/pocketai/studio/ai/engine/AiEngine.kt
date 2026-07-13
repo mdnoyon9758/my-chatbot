@@ -3,6 +3,7 @@ package com.pocketai.studio.ai.engine
 import android.content.Context
 import com.pocketai.studio.ai.jni.LlamaBridge
 import com.pocketai.studio.domain.model.InferenceConfig
+import com.pocketai.studio.domain.model.PerformanceMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -84,12 +85,15 @@ class AiEngine @Inject constructor(
         _tokenCount = 0
         val fullPrompt = buildPrompt(prompt, systemPrompt)
 
+        // Apply performance mode overrides
+        val effectiveConfig = applyPerformanceMode(config)
+
         if (LlamaBridge.isNativeAvailable() && LlamaBridge.isContextActive()) {
             val tokensResult = LlamaBridge.evaluateStream(
                 prompt = fullPrompt,
-                maxTokens = config.maxTokens,
-                temperature = config.temperature,
-                topP = config.topP
+                maxTokens = effectiveConfig.maxTokens,
+                temperature = effectiveConfig.temperature,
+                topP = effectiveConfig.topP
             )
             if (tokensResult.isSuccess) {
                 for (token in tokensResult.getOrThrow()) {
@@ -104,6 +108,22 @@ class AiEngine @Inject constructor(
                  "Please ensure llama.cpp is compiled for your device architecture.]")
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun applyPerformanceMode(config: InferenceConfig): InferenceConfig {
+        return when (config.performanceMode) {
+            PerformanceMode.FAST -> config.copy(
+                temperature = 0.9f,
+                topP = 0.95f,
+                maxTokens = 1024
+            )
+            PerformanceMode.BALANCED -> config
+            PerformanceMode.HIGH_QUALITY -> config.copy(
+                temperature = 0.3f,
+                topP = 0.85f,
+                maxTokens = 4096
+            )
+        }
+    }
 
     fun stopGeneration() {
         generationJob?.cancel()

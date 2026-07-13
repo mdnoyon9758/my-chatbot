@@ -15,7 +15,7 @@ object LlamaBridge {
 
     init {
         try {
-            System.loadLibrary("llama")
+            System.loadLibrary("llama_jni")
             nativeLoaded = true
         } catch (e: UnsatisfiedLinkError) {
             nativeLoaded = false

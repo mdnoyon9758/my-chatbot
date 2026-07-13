@@ -23,5 +23,7 @@ data class MessageEntity(
     val role: String,
     val content: String,
     val timestamp: Long,
-    val tokenCount: Int = 0
+    val tokenCount: Int = 0,
+    val attachments: String = "[]",
+    val toolUsed: String? = null
 )

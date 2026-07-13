@@ -1,9 +1,11 @@
 package com.pocketai.studio.data.repository
 
+import com.google.gson.Gson
 import com.pocketai.studio.data.local.dao.ChatSessionDao
 import com.pocketai.studio.data.local.dao.MessageDao
 import com.pocketai.studio.data.local.entity.ChatSessionEntity
 import com.pocketai.studio.data.local.entity.MessageEntity
+import com.pocketai.studio.domain.model.Attachment
 import com.pocketai.studio.domain.model.ChatMessage
 import com.pocketai.studio.domain.model.ChatSession
 import com.pocketai.studio.domain.model.MessageRole
@@ -22,6 +24,8 @@ class ChatRepositoryImpl @Inject constructor(
     private val chatSessionDao: ChatSessionDao,
     private val messageDao: MessageDao
 ) : ChatRepository {
+
+    private val gson = Gson()
 
     override fun getAllSessions(): Flow<List<ChatSession>> =
         chatSessionDao.getAllSessions().map { list -> list.map { it.toDomain() } }
@@ -67,11 +71,20 @@ class ChatRepositoryImpl @Inject constructor(
     override suspend fun getMessagesSync(chatId: String): List<ChatMessage> =
         messageDao.getMessagesByChatIdSync(chatId).map { it.toDomain() }
 
-    override suspend fun insertMessage(chatId: String, role: String, content: String, tokenCount: Int): ChatMessage {
+    override suspend fun insertMessage(
+        chatId: String,
+        role: String,
+        content: String,
+        tokenCount: Int,
+        attachments: List<Attachment>,
+        toolUsed: String?
+    ): ChatMessage {
+        val attachmentsJson = gson.toJson(attachments)
         val msg = MessageEntity(
             id = UUID.randomUUID().toString(), chatId = chatId,
             role = role, content = content,
-            timestamp = System.currentTimeMillis(), tokenCount = tokenCount
+            timestamp = System.currentTimeMillis(), tokenCount = tokenCount,
+            attachments = attachmentsJson, toolUsed = toolUsed
         )
         messageDao.insertMessage(msg)
         val count = messageDao.getMessageCount(chatId)
@@ -96,9 +109,16 @@ class ChatRepositoryImpl @Inject constructor(
         id, title, modelId, modelName, createdAt, updatedAt, messageCount, lastPreview
     )
 
-    private fun MessageEntity.toDomain() = ChatMessage(
-        id, chatId,
-        when (role) { "USER" -> MessageRole.USER; "ASSISTANT" -> MessageRole.ASSISTANT; else -> MessageRole.SYSTEM },
-        content, timestamp, tokenCount
-    )
+    private fun MessageEntity.toDomain(): ChatMessage {
+        val attachmentsList = try {
+            gson.fromJson(attachments, Array<Attachment>::class.java)?.toList() ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        return ChatMessage(
+            id, chatId,
+            when (role) { "USER" -> MessageRole.USER; "ASSISTANT" -> MessageRole.ASSISTANT; else -> MessageRole.SYSTEM },
+            content, timestamp, tokenCount, attachments = attachmentsList, toolUsed = toolUsed
+        )
+    }
 }

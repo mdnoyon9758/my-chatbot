@@ -26,10 +26,7 @@ fun HomeScreen(
     onNavigateToChat: (String) -> Unit,
     onNavigateToNewChat: () -> Unit,
     onNavigateToModels: () -> Unit,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToPdf: () -> Unit,
-    onNavigateToOcr: () -> Unit,
-    onNavigateToTextTools: () -> Unit
+    onNavigateToSettings: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -61,67 +58,72 @@ fun HomeScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Quick Actions
+            // New Chat CTA
             item {
-                Text(
-                    "Quick Actions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Card(
+                    onClick = onNavigateToNewChat,
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    QuickActionCard(
-                        icon = Icons.Filled.Chat,
-                        label = "New Chat",
-                        color = MaterialTheme.colorScheme.primary,
-                        onClick = onNavigateToNewChat,
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        icon = Icons.Filled.PictureAsPdf,
-                        label = "PDF",
-                        color = MaterialTheme.colorScheme.error,
-                        onClick = onNavigateToPdf,
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        icon = Icons.Filled.TextSnippet,
-                        label = "OCR",
-                        color = MaterialTheme.colorScheme.tertiary,
-                        onClick = onNavigateToOcr,
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        icon = Icons.Filled.Edit,
-                        label = "Text Tools",
-                        color = MaterialTheme.colorScheme.secondary,
-                        onClick = onNavigateToTextTools,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Start a new chat",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "Ask anything, attach files, use commands",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                        Icon(
+                            Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
             }
 
             // Installed Models
             item {
-                Text(
-                    "Installed Models",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Installed Models",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = onNavigateToModels) {
+                        Text("Manage")
+                    }
+                }
             }
 
             if (uiState.installedModels.isEmpty()) {
                 item {
-                    EmptyStateCard(
-                        icon = Icons.Filled.Memory,
-                        title = "No models installed",
-                        subtitle = "Download a model to start using AI",
-                        actionText = "Browse Models",
-                        onAction = onNavigateToModels
-                    )
+                    EmptyModelsCard(onManage = onNavigateToModels)
                 }
             } else {
                 items(uiState.installedModels) { model ->
@@ -140,13 +142,7 @@ fun HomeScreen(
 
             if (uiState.recentChats.isEmpty() && !uiState.isLoading) {
                 item {
-                    EmptyStateCard(
-                        icon = Icons.Filled.ChatBubbleOutline,
-                        title = "No chats yet",
-                        subtitle = "Start a conversation with your AI",
-                        actionText = "New Chat",
-                        onAction = onNavigateToNewChat
-                    )
+                    EmptyChatsCard(onNewChat = onNavigateToNewChat)
                 }
             } else {
                 items(uiState.recentChats) { chat ->
@@ -162,52 +158,10 @@ fun HomeScreen(
 }
 
 @Composable
-private fun QuickActionCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    color: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = color.copy(alpha = 0.12f)
-        ),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = color,
-                modifier = Modifier.size(26.dp)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1
-            )
-        }
-    }
-}
-
-@Composable
 private fun ModelQuickCard(model: com.pocketai.studio.domain.model.AiModel) {
     Card(
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -217,10 +171,7 @@ private fun ModelQuickCard(model: com.pocketai.studio.domain.model.AiModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .padding(0.dp),
+                modifier = Modifier.size(40.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -232,11 +183,7 @@ private fun ModelQuickCard(model: com.pocketai.studio.domain.model.AiModel) {
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    model.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
+                Text(model.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(
                     "${model.developer}  \u00B7  ${model.fileSizeFormatted}",
                     style = MaterialTheme.typography.bodySmall,
@@ -264,9 +211,7 @@ private fun ChatCard(
     Card(
         onClick = onClick,
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -276,14 +221,11 @@ private fun ChatCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .padding(0.dp),
+                modifier = Modifier.size(40.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.SmartToy,
+                    Icons.Filled.Chat,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.size(22.dp)
@@ -298,17 +240,14 @@ private fun ChatCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (chat.lastPreview.isNotBlank()) {
-                        Text(
-                            chat.lastPreview,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                    }
+                if (chat.lastPreview.isNotBlank()) {
+                    Text(
+                        chat.lastPreview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Text(
                     formatRelativeTime(chat.updatedAt),
@@ -317,34 +256,14 @@ private fun ChatCard(
                 )
             }
             Box {
-                IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = "Options",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Options", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(
                         text = { Text("Delete") },
-                        onClick = {
-                            showMenu = false
-                            onDelete()
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
+                        onClick = { showMenu = false; onDelete() },
+                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                     )
                 }
             }
@@ -353,48 +272,45 @@ private fun ChatCard(
 }
 
 @Composable
-private fun EmptyStateCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    actionText: String,
-    onAction: () -> Unit
-) {
+private fun EmptyModelsCard(onManage: () -> Unit) {
     Card(
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(28.dp),
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
+            Icon(Icons.Filled.Memory, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text("No models installed", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onAction, shape = MaterialTheme.shapes.small) {
-                Text(actionText)
-            }
+            Text("Download a model to start using AI", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(onClick = onManage, shape = MaterialTheme.shapes.small) { Text("Browse Models") }
+        }
+    }
+}
+
+@Composable
+private fun EmptyChatsCard(onNewChat: () -> Unit) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Filled.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("No chats yet", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Start a conversation with your AI", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(onClick = onNewChat, shape = MaterialTheme.shapes.small) { Text("New Chat") }
         }
     }
 }
@@ -407,9 +323,6 @@ private fun formatRelativeTime(timestamp: Long): String {
         diff < TimeUnit.HOURS.toMillis(1) -> "${diff / TimeUnit.MINUTES.toMillis(1)}m ago"
         diff < TimeUnit.DAYS.toMillis(1) -> "${diff / TimeUnit.HOURS.toMillis(1)}h ago"
         diff < TimeUnit.DAYS.toMillis(7) -> "${diff / TimeUnit.DAYS.toMillis(1)}d ago"
-        else -> {
-            val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
-            sdf.format(Date(timestamp))
-        }
+        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
     }
 }

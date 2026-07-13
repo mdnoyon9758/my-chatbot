@@ -23,8 +23,8 @@ target_link_libraries(llama_jni
     log
 )
 
-# Rename output to libllama.so so System.loadLibrary("llama") works
+# Output as libllama_jni.so (links against libllama.so from llama.cpp target)
 set_target_properties(llama_jni PROPERTIES
-    OUTPUT_NAME "llama"
+    OUTPUT_NAME "llama_jni"
     PREFIX "lib"
 )

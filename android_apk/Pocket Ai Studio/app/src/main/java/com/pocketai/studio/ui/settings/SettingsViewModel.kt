@@ -16,9 +16,8 @@ data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val fontSize: Int = 16,
     val inferenceConfig: InferenceConfig = InferenceConfig(),
-    val storageUsed: String = "0 MB",
     val modelsCount: Int = 0,
-    val chatsCount: Int = 0
+    val storageUsed: String = "0 MB"
 )
 
 @HiltViewModel
@@ -32,27 +31,55 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            settingsRepository.themeMode.collect { _uiState.update { it.copy(themeMode = it.themeMode) } }
+            settingsRepository.themeMode.collect { mode ->
+                _uiState.update { it.copy(themeMode = mode) }
+            }
         }
         viewModelScope.launch {
-            settingsRepository.fontSize.collect { _uiState.update { it.copy(fontSize = it.fontSize) } }
+            settingsRepository.fontSize.collect { size ->
+                _uiState.update { it.copy(fontSize = size) }
+            }
         }
         viewModelScope.launch {
-            settingsRepository.inferenceConfig.collect { _uiState.update { it.copy(inferenceConfig = it.inferenceConfig) } }
+            settingsRepository.inferenceConfig.collect { config ->
+                _uiState.update { it.copy(inferenceConfig = config) }
+            }
         }
         viewModelScope.launch {
             val models = modelManager.getInstalledModels()
-            val size = modelManager.getModelsSize()
-            _uiState.update { it.copy(modelsCount = models.size, storageUsed = formatSize(size)) }
+            val modelsSize = modelManager.getModelsSize()
+            _uiState.update {
+                it.copy(
+                    modelsCount = models.size,
+                    storageUsed = formatSize(modelsSize)
+                )
+            }
         }
     }
 
-    fun setThemeMode(mode: ThemeMode) { viewModelScope.launch { settingsRepository.setThemeMode(mode) } }
-    fun setFontSize(size: Int) { viewModelScope.launch { settingsRepository.setFontSize(size) } }
-    fun setContextSize(size: Int) { viewModelScope.launch { settingsRepository.setContextSize(size) } }
-    fun setThreads(threads: Int) { viewModelScope.launch { settingsRepository.setThreads(threads) } }
-    fun setUseGpu(useGpu: Boolean) { viewModelScope.launch { settingsRepository.setUseGpu(useGpu) } }
-    fun setPerformanceMode(mode: PerformanceMode) { viewModelScope.launch { settingsRepository.setPerformanceMode(mode) } }
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settingsRepository.setThemeMode(mode) }
+    }
+
+    fun setFontSize(size: Int) {
+        viewModelScope.launch { settingsRepository.setFontSize(size) }
+    }
+
+    fun setPerformanceMode(mode: PerformanceMode) {
+        viewModelScope.launch { settingsRepository.setPerformanceMode(mode) }
+    }
+
+    fun setContextSize(size: Int) {
+        viewModelScope.launch { settingsRepository.setContextSize(size) }
+    }
+
+    fun setThreads(threads: Int) {
+        viewModelScope.launch { settingsRepository.setThreads(threads) }
+    }
+
+    fun setUseGpu(use: Boolean) {
+        viewModelScope.launch { settingsRepository.setUseGpu(use) }
+    }
 
     private fun formatSize(bytes: Long): String = when {
         bytes < 1024 * 1024 -> "${bytes / 1024} KB"

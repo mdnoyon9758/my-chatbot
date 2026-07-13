@@ -1,5 +1,6 @@
 package com.pocketai.studio.domain.repository
 
+import com.pocketai.studio.domain.model.Attachment
 import com.pocketai.studio.domain.model.ChatMessage
 import com.pocketai.studio.domain.model.ChatSession
 import kotlinx.coroutines.flow.Flow
@@ -17,7 +18,14 @@ interface ChatRepository {
 
     fun getMessagesByChatId(chatId: String): Flow<List<ChatMessage>>
     suspend fun getMessagesSync(chatId: String): List<ChatMessage>
-    suspend fun insertMessage(chatId: String, role: String, content: String, tokenCount: Int = 0): ChatMessage
+    suspend fun insertMessage(
+        chatId: String,
+        role: String,
+        content: String,
+        tokenCount: Int = 0,
+        attachments: List<Attachment> = emptyList(),
+        toolUsed: String? = null
+    ): ChatMessage
     suspend fun deleteMessage(id: String)
     suspend fun deleteMessagesByChatId(chatId: String)
     suspend fun getTotalMessageCount(): Int

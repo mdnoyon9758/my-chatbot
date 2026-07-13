@@ -27,7 +27,7 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(
             context, AppDatabase::class.java, "pocket_ai_studio.db"
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
 
     @Provides

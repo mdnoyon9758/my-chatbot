@@ -9,6 +9,7 @@ import com.pocketai.studio.ai.modelmanager.ModelManager
 import com.pocketai.studio.domain.model.AiModel
 import com.pocketai.studio.domain.model.DownloadStatus
 import com.pocketai.studio.domain.model.InferenceConfig
+import com.pocketai.studio.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
@@ -29,17 +30,27 @@ data class ModelManagerUiState(
 class ModelManagerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val modelManager: ModelManager,
-    private val aiEngine: AiEngine
+    private val aiEngine: AiEngine,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ModelManagerUiState())
     val uiState: StateFlow<ModelManagerUiState> = _uiState.asStateFlow()
 
+    private var currentConfig = InferenceConfig()
+
     init {
         loadModels()
         _uiState.update { it.copy(loadedModelName = aiEngine.getCurrentModelName()) }
 
-        // Collect download progress and status from ModelManager
+        // Collect saved settings
+        viewModelScope.launch {
+            settingsRepository.inferenceConfig.collect { config ->
+                currentConfig = config
+            }
+        }
+
+        // Collect download progress and status
         viewModelScope.launch {
             modelManager.downloadProgress.collect { progress ->
                 _uiState.update { it.copy(downloadProgress = progress) }
@@ -48,7 +59,6 @@ class ModelManagerViewModel @Inject constructor(
         viewModelScope.launch {
             modelManager.downloadStatus.collect { status ->
                 _uiState.update { it.copy(downloadStatus = status) }
-                // Refresh installed models when a download completes
                 if (status.values.any { it == DownloadStatus.COMPLETED }) {
                     loadModels()
                 }
@@ -88,7 +98,8 @@ class ModelManagerViewModel @Inject constructor(
 
     fun loadModel(model: AiModel) {
         viewModelScope.launch {
-            val result = aiEngine.loadModel(model.filePath ?: "", InferenceConfig())
+            // Use saved settings from SettingsRepository
+            val result = aiEngine.loadModel(model.filePath ?: "", currentConfig)
             result.onSuccess {
                 _uiState.update { it.copy(loadedModelName = model.name, message = "Model loaded: ${model.name}") }
             }.onFailure { e ->

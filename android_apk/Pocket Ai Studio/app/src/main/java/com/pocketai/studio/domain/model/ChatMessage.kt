@@ -7,7 +7,17 @@ data class ChatMessage(
     val content: String,
     val timestamp: Long,
     val tokenCount: Int = 0,
-    val isStreaming: Boolean = false
+    val isStreaming: Boolean = false,
+    val attachments: List<Attachment> = emptyList(),
+    val toolUsed: String? = null
 )
 
 enum class MessageRole { USER, ASSISTANT, SYSTEM }
+
+enum class AttachmentType { IMAGE, PDF }
+
+data class Attachment(
+    val uri: String,
+    val type: AttachmentType,
+    val name: String
+)

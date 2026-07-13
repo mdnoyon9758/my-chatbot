@@ -24,14 +24,8 @@ import com.pocketai.studio.ui.home.HomeScreen
 import com.pocketai.studio.ui.home.HomeViewModel
 import com.pocketai.studio.ui.modelmanager.ModelManagerScreen
 import com.pocketai.studio.ui.modelmanager.ModelManagerViewModel
-import com.pocketai.studio.ui.ocr.OcrScreen
-import com.pocketai.studio.ui.ocr.OcrViewModel
-import com.pocketai.studio.ui.pdf.PdfScreen
-import com.pocketai.studio.ui.pdf.PdfViewModel
 import com.pocketai.studio.ui.settings.SettingsScreen
 import com.pocketai.studio.ui.settings.SettingsViewModel
-import com.pocketai.studio.ui.texttools.TextToolsScreen
-import com.pocketai.studio.ui.texttools.TextToolsViewModel
 
 data class BottomNavItem(val route: String, val label: String, val icon: ImageVector)
 
@@ -46,6 +40,7 @@ fun AppNavigation() {
 
     val bottomNavItems = listOf(
         BottomNavItem(NavRoutes.Home.route, "Home", Icons.Filled.Home),
+        BottomNavItem(NavRoutes.Chat.route, "Chat", Icons.Filled.Chat),
         BottomNavItem(NavRoutes.Models.route, "Models", Icons.Filled.Memory),
         BottomNavItem(NavRoutes.Settings.route, "Settings", Icons.Filled.Settings)
     )
@@ -112,10 +107,7 @@ fun AppNavigation() {
                     onNavigateToChat = { chatId -> navController.navigate(NavRoutes.Chat.createRoute(chatId)) },
                     onNavigateToNewChat = { navController.navigate(NavRoutes.NewChat.route) },
                     onNavigateToModels = { navController.navigate(NavRoutes.Models.route) },
-                    onNavigateToSettings = { navController.navigate(NavRoutes.Settings.route) },
-                    onNavigateToPdf = { navController.navigate(NavRoutes.PdfAssistant.route) },
-                    onNavigateToOcr = { navController.navigate(NavRoutes.Ocr.route) },
-                    onNavigateToTextTools = { navController.navigate(NavRoutes.TextTools.route) }
+                    onNavigateToSettings = { navController.navigate(NavRoutes.Settings.route) }
                 )
             }
 
@@ -141,21 +133,6 @@ fun AppNavigation() {
             composable(NavRoutes.Settings.route) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 SettingsScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })
-            }
-
-            composable(NavRoutes.PdfAssistant.route) {
-                val viewModel: PdfViewModel = hiltViewModel()
-                PdfScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })
-            }
-
-            composable(NavRoutes.Ocr.route) {
-                val viewModel: OcrViewModel = hiltViewModel()
-                OcrScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })
-            }
-
-            composable(NavRoutes.TextTools.route) {
-                val viewModel: TextToolsViewModel = hiltViewModel()
-                TextToolsScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })
             }
         }
     }
