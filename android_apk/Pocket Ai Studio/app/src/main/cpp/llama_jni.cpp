@@ -97,7 +97,6 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluate(
     ictx->stop_requested = false;
     ictx->token_count = 0;
 
-    // Recreate sampler with requested params
     if (ictx->sampler) llama_sampler_free(ictx->sampler);
     ictx->sampler = create_sampler(temperature, topP);
     if (!ictx->sampler) return toJString(env, "[Error: failed to create sampler]");
@@ -118,7 +117,6 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluate(
     llama_batch batch = llama_batch_init(512, 0, 1);
     if (!batch.token) { free(tokens); return toJString(env, "[Error: batch alloc failed]"); }
 
-    // Evaluate prompt tokens
     for (int32_t i = 0; i < n_tokens && !ictx->stop_requested; i++) {
         batch.token[0] = tokens[i];
         batch.n_tokens = 1;
@@ -133,9 +131,8 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluate(
         }
     }
 
-    // Generate response
     for (int g = 0; g < maxTokens && !ictx->stop_requested; g++) {
-        llama_token tid = llama_sampler_sample(ictx->sampler, ictx->ctx, -1);
+        llama_token tid = llama_sampler_sample(ictx->sampler, ictx->ctx, 0);
         if (llama_vocab_is_eog(ictx->vocab, tid)) break;
 
         char buf[256];
@@ -183,6 +180,10 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluateStream(
                                         nullptr, 0, true, true);
     if (n_tokens <= 0) return env->NewObjectArray(0, strCls, nullptr);
 
+    // Limit prompt tokens to context size minus generation space
+    int32_t max_prompt = ictx->n_ctx - 256;
+    if (n_tokens > max_prompt) n_tokens = max_prompt;
+
     auto *tokens = (llama_token *)malloc(sizeof(llama_token) * n_tokens);
     if (!tokens) return env->NewObjectArray(0, strCls, nullptr);
     llama_tokenize(ictx->vocab, input.c_str(), (int32_t)input.size(),
@@ -191,6 +192,11 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluateStream(
     std::vector<std::string> tokenStrings;
     llama_batch batch = llama_batch_init(512, 0, 1);
     if (!batch.token) { free(tokens); return env->NewObjectArray(0, strCls, nullptr); }
+
+    // Limit generation to available context space
+    int max_gen = ictx->n_ctx - n_tokens - 4;
+    if (maxTokens > max_gen) maxTokens = max_gen;
+    if (maxTokens < 1) maxTokens = 1;
 
     for (int32_t i = 0; i < n_tokens && !ictx->stop_requested; i++) {
         batch.token[0] = tokens[i];
@@ -207,7 +213,7 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluateStream(
     }
 
     for (int g = 0; g < maxTokens && !ictx->stop_requested; g++) {
-        llama_token tid = llama_sampler_sample(ictx->sampler, ictx->ctx, -1);
+        llama_token tid = llama_sampler_sample(ictx->sampler, ictx->ctx, 0);
         if (llama_vocab_is_eog(ictx->vocab, tid)) break;
 
         char buf[256];
@@ -229,9 +235,15 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluateStream(
     llama_batch_free(batch);
     free(tokens);
 
-    jobjectArray arr = env->NewObjectArray((jsize)tokenStrings.size(), strCls, nullptr);
-    for (jsize i = 0; i < (jsize)tokenStrings.size(); i++) {
-        env->SetObjectArrayElement(arr, i, toJString(env, tokenStrings[i]));
+    // Build result array using PushLocalFrame to prevent JNI reference table overflow
+    jsize count = (jsize)tokenStrings.size();
+    jobjectArray arr = env->NewObjectArray(count, strCls, nullptr);
+    if (!arr) return env->NewObjectArray(0, strCls, nullptr);
+
+    for (jsize i = 0; i < count; i++) {
+        jstring js = env->NewStringUTF(tokenStrings[i].c_str());
+        env->SetObjectArrayElement(arr, i, js);
+        env->DeleteLocalRef(js);
     }
     return arr;
 }

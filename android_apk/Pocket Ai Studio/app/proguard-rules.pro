@@ -26,3 +26,14 @@
 
 # Keep AI engine
 -keep class com.pocketai.studio.ai.** { *; }
+# Keep JNI bridge classes — R8 must not rename or strip native methods
+-keep class com.pocketai.studio.ai.jni.LlamaBridge { *; }
+-keepclassmembers class com.pocketai.studio.ai.jni.LlamaBridge {
+    private native <methods>;
+}
+
+# Keep ML Kit
+-keep class com.google.mlkit.** { *; }
+
+# Keep iText
+-keep class com.itextpdf.** { *; }

@@ -58,9 +58,7 @@ class ChatViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            settingsRepository.inferenceConfig.collect { config ->
-                inferenceConfig = config
-            }
+            settingsRepository.inferenceConfig.collect { config -> inferenceConfig = config }
         }
         viewModelScope.launch {
             val models = modelManager.getInstalledModels()
@@ -70,10 +68,12 @@ class ChatViewModel @Inject constructor(
                     selectedModel = models.firstOrNull()?.name ?: ""
                 )
             }
-            // Auto-load the first model if none is loaded
+            // Auto-load first model if none loaded
             if (!aiEngine.isModelLoaded() && models.isNotEmpty()) {
-                val firstModel = models.first()
-                aiEngine.loadModel(firstModel.filePath ?: "", inferenceConfig)
+                val first = models.first()
+                if (first.filePath != null && first.filePath.isNotBlank()) {
+                    aiEngine.loadModel(first.filePath, inferenceConfig)
+                }
             }
         }
     }
@@ -94,12 +94,12 @@ class ChatViewModel @Inject constructor(
 
     fun selectModel(modelName: String) {
         _uiState.update { it.copy(selectedModel = modelName) }
-        // Load the selected model if not already loaded
         viewModelScope.launch {
             val models = modelManager.getInstalledModels()
             val model = models.find { it.name == modelName }
-            if (model != null && aiEngine.getCurrentModelName() != model.name) {
-                aiEngine.loadModel(model.filePath ?: "", inferenceConfig)
+            if (model != null && model.filePath != null && model.filePath.isNotBlank()
+                && aiEngine.getCurrentModelName() != model.name) {
+                aiEngine.loadModel(model.filePath, inferenceConfig)
             }
         }
     }
@@ -147,7 +147,7 @@ class ChatViewModel @Inject constructor(
                     else -> handleNormalChat(sessionId, text)
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = e.message) }
+                _uiState.update { it.copy(error = e.message ?: "Unknown error") }
             } finally {
                 _uiState.update { it.copy(isGenerating = false, currentResponse = "") }
             }
@@ -164,7 +164,12 @@ class ChatViewModel @Inject constructor(
             tokenCount++
             _uiState.update { it.copy(currentResponse = fullResponse, tokenCount = tokenCount) }
         }
-        chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, tokenCount)
+
+        if (fullResponse.isNotBlank() && !fullResponse.startsWith("[Error:")) {
+            chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, tokenCount)
+        } else if (fullResponse.isNotBlank()) {
+            chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, 0)
+        }
     }
 
     private suspend fun handleSlashCommand(sessionId: String, text: String) {
@@ -201,12 +206,9 @@ class ChatViewModel @Inject constructor(
 
     private suspend fun handleImageAttachment(sessionId: String, text: String, attachment: Attachment) {
         _uiState.update { it.copy(isProcessingAttachment = true) }
-
         try {
             val imageUri = Uri.parse(attachment.uri)
-            val extractedText = withContext(Dispatchers.IO) {
-                performOcr(imageUri)
-            }
+            val extractedText = withContext(Dispatchers.IO) { performOcr(imageUri) }
 
             val prompt = buildString {
                 if (extractedText.isNotBlank()) {
@@ -218,7 +220,6 @@ class ChatViewModel @Inject constructor(
                 }
                 if (text.isNotBlank()) append(text) else append("Analyze this text.")
             }
-
             _uiState.update { it.copy(isProcessingAttachment = false) }
             handleNormalChat(sessionId, prompt)
         } catch (e: Exception) {
@@ -230,37 +231,21 @@ class ChatViewModel @Inject constructor(
         try {
             val image = InputImage.fromFilePath(context, uri)
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
             recognizer.process(image)
-                .addOnSuccessListener { result ->
-                    cont.resume(result.text)
-                    recognizer.close()
-                }
-                .addOnFailureListener { e ->
-                    cont.resume("")
-                    recognizer.close()
-                }
-        } catch (e: Exception) {
-            cont.resume("")
-        }
+                .addOnSuccessListener { result -> cont.resume(result.text); recognizer.close() }
+                .addOnFailureListener { cont.resume(""); recognizer.close() }
+        } catch (e: Exception) { cont.resume("") }
     }
 
     private suspend fun handlePdfAttachment(sessionId: String, text: String, attachment: Attachment) {
         _uiState.update { it.copy(isProcessingAttachment = true) }
-
         try {
             val pdfUri = Uri.parse(attachment.uri)
-            val extractedText = withContext(Dispatchers.IO) {
-                extractPdfText(pdfUri)
-            }
+            val extractedText = withContext(Dispatchers.IO) { extractPdfText(pdfUri) }
 
             val prompt = buildString {
                 if (extractedText.isNotBlank()) {
-                    val truncated = if (extractedText.length > 8000) {
-                        extractedText.take(8000) + "\n\n[...truncated]"
-                    } else {
-                        extractedText
-                    }
+                    val truncated = if (extractedText.length > 8000) extractedText.take(8000) + "\n\n[...truncated]" else extractedText
                     append("Content from PDF '${attachment.name}':\n\n")
                     append(truncated)
                     append("\n\n")
@@ -269,7 +254,6 @@ class ChatViewModel @Inject constructor(
                 }
                 if (text.isNotBlank()) append(text) else append("What is this document about?")
             }
-
             _uiState.update { it.copy(isProcessingAttachment = false) }
             handleNormalChat(sessionId, prompt)
         } catch (e: Exception) {
@@ -279,22 +263,12 @@ class ChatViewModel @Inject constructor(
 
     private fun extractPdfText(uri: Uri): String {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-                ?: return "Could not open PDF file"
-
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return "Could not open PDF"
             val reader = BufferedReader(InputStreamReader(inputStream))
             val text = reader.readText()
-            reader.close()
-            inputStream.close()
-
-            if (text.isBlank() || text.length < 10) {
-                "PDF appears to be image-based or empty."
-            } else {
-                text
-            }
-        } catch (e: Exception) {
-            "Error reading PDF: ${e.message}"
-        }
+            reader.close(); inputStream.close()
+            if (text.isBlank() || text.length < 10) "PDF appears to be image-based or empty." else text
+        } catch (e: Exception) { "Error reading PDF: ${e.message}" }
     }
 
     fun stopGeneration() {
@@ -302,16 +276,14 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(isGenerating = false) }
     }
 
-    fun clearError() {
-        _uiState.update { it.copy(error = null) }
-    }
+    fun clearError() { _uiState.update { it.copy(error = null) } }
 
     private fun getFileName(uri: Uri): String? {
         var name: String? = null
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) name = cursor.getString(nameIndex)
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) name = cursor.getString(idx)
             }
         }
         return name

@@ -43,24 +43,32 @@ class ModelManagerViewModel @Inject constructor(
         loadModels()
         _uiState.update { it.copy(loadedModelName = aiEngine.getCurrentModelName()) }
 
-        // Collect saved settings
         viewModelScope.launch {
-            settingsRepository.inferenceConfig.collect { config ->
-                currentConfig = config
-            }
+            settingsRepository.inferenceConfig.collect { config -> currentConfig = config }
         }
 
-        // Collect download progress and status
         viewModelScope.launch {
             modelManager.downloadProgress.collect { progress ->
                 _uiState.update { it.copy(downloadProgress = progress) }
             }
         }
+
         viewModelScope.launch {
+            var wasDownloading = mutableSetOf<String>()
             modelManager.downloadStatus.collect { status ->
                 _uiState.update { it.copy(downloadStatus = status) }
-                if (status.values.any { it == DownloadStatus.COMPLETED }) {
+
+                // Auto-load model after download completes
+                val newlyCompleted = status.filter { it.value == DownloadStatus.COMPLETED && it.key !in wasDownloading }
+                newlyCompleted.forEach { (modelId, _) ->
+                    wasDownloading.add(modelId)
                     loadModels()
+                    // Auto-load the newly downloaded model
+                    val models = modelManager.getInstalledModels()
+                    val newModel = models.find { it.id == modelId }
+                    if (newModel != null && newModel.filePath != null) {
+                        loadModel(newModel)
+                    }
                 }
             }
         }
@@ -72,6 +80,14 @@ class ModelManagerViewModel @Inject constructor(
             val installed = modelManager.getInstalledModels()
             val available = modelManager.getAvailableModels()
             _uiState.update { it.copy(installedModels = installed, availableModels = available, isLoading = false) }
+
+            // Auto-load first model if none loaded
+            if (aiEngine.getCurrentModelName() == null && installed.isNotEmpty()) {
+                val first = installed.first()
+                if (first.filePath != null) {
+                    loadModel(first)
+                }
+            }
         }
     }
 
@@ -90,6 +106,7 @@ class ModelManagerViewModel @Inject constructor(
             result.onSuccess { model ->
                 _uiState.update { it.copy(message = "Imported: ${model.name}") }
                 loadModels()
+                if (model.filePath != null) loadModel(model)
             }.onFailure { e ->
                 _uiState.update { it.copy(message = "Import failed: ${e.message}") }
             }
@@ -97,9 +114,13 @@ class ModelManagerViewModel @Inject constructor(
     }
 
     fun loadModel(model: AiModel) {
+        val path = model.filePath
+        if (path.isNullOrBlank()) {
+            _uiState.update { it.copy(message = "Cannot load: model file path is missing") }
+            return
+        }
         viewModelScope.launch {
-            // Use saved settings from SettingsRepository
-            val result = aiEngine.loadModel(model.filePath ?: "", currentConfig)
+            val result = aiEngine.loadModel(path, currentConfig)
             result.onSuccess {
                 _uiState.update { it.copy(loadedModelName = model.name, message = "Model loaded: ${model.name}") }
             }.onFailure { e ->
@@ -110,6 +131,10 @@ class ModelManagerViewModel @Inject constructor(
 
     fun deleteModel(model: AiModel) {
         viewModelScope.launch {
+            if (model.name == aiEngine.getCurrentModelName()) {
+                aiEngine.unloadModel()
+                _uiState.update { it.copy(loadedModelName = null) }
+            }
             val deleted = modelManager.deleteModel(model)
             if (deleted) {
                 _uiState.update { it.copy(message = "Deleted: ${model.name}") }

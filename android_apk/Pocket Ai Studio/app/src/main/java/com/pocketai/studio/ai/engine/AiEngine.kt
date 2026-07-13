@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,12 +18,12 @@ import javax.inject.Singleton
 class AiEngine @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private var isLoaded = false
-    private var currentModelPath: String? = null
-    private var currentModelName: String? = null
-    private var _tokenCount: Int = 0
+    @Volatile private var isLoaded = false
+    @Volatile private var currentModelPath: String? = null
+    @Volatile private var currentModelName: String? = null
+    @Volatile private var _tokenCount: Int = 0
+    @Volatile private var stopRequested = false
     private val inferenceMutex = Mutex()
-    private var stopRequested = false
 
     val tokenCount: Int get() = _tokenCount
 
@@ -35,9 +34,12 @@ class AiEngine @Inject constructor(
 
     suspend fun loadModel(modelPath: String, config: InferenceConfig = InferenceConfig()): Result<Unit> {
         return try {
+            if (modelPath.isBlank()) {
+                return Result.failure(ModelException("Model path is empty", ModelError.FILE_NOT_FOUND))
+            }
             val modelFile = File(modelPath)
             if (!modelFile.exists()) {
-                return Result.failure(ModelException("Model file not found", ModelError.FILE_NOT_FOUND))
+                return Result.failure(ModelException("Model file not found: $modelPath", ModelError.FILE_NOT_FOUND))
             }
             if (!modelFile.canRead()) {
                 return Result.failure(ModelException("Cannot read model file", ModelError.PERMISSION_DENIED))
@@ -46,7 +48,13 @@ class AiEngine @Inject constructor(
                 return Result.failure(ModelException("Model file is empty", ModelError.CORRUPTED_MODEL))
             }
 
-            unloadModel()
+            // Wait for any ongoing inference to finish before unloading
+            if (inferenceMutex.isLocked) {
+                inferenceMutex.lock()
+                inferenceMutex.unlock()
+            }
+
+            unloadModelInternal()
 
             if (LlamaBridge.isNativeAvailable()) {
                 val result = LlamaBridge.createContext(
@@ -56,6 +64,8 @@ class AiEngine @Inject constructor(
                     useGpu = config.useGpu
                 )
                 result.getOrThrow()
+            } else {
+                return Result.failure(ModelException("Native library not available", ModelError.NATIVE_ERROR))
             }
 
             currentModelPath = modelPath
@@ -66,10 +76,10 @@ class AiEngine @Inject constructor(
         } catch (e: UnsatisfiedLinkError) {
             Result.failure(ModelException("Native library not available", ModelError.NATIVE_ERROR))
         } catch (e: OutOfMemoryError) {
-            unloadModel()
+            unloadModelInternal()
             Result.failure(ModelException("Device does not have enough RAM", ModelError.OUT_OF_MEMORY))
         } catch (e: Exception) {
-            unloadModel()
+            unloadModelInternal()
             Result.failure(ModelException(e.message ?: "Unknown error", ModelError.LOAD_FAILED))
         }
     }
@@ -84,15 +94,23 @@ class AiEngine @Inject constructor(
             return@flow
         }
 
-        // Prevent concurrent inference
-        if (!inferenceMutex.tryLock()) {
-            emit("[Error: Already generating a response. Please wait or stop the current generation.]")
+        // Try to acquire mutex — if already locked, another generation is in progress
+        val locked = inferenceMutex.tryLock()
+        if (!locked) {
+            emit("[Error: Already generating. Please wait or stop the current generation.]")
             return@flow
         }
 
         try {
             _tokenCount = 0
             stopRequested = false
+
+            // Check state again after acquiring lock
+            if (!isLoaded || currentModelPath == null) {
+                emit("[Error: Model was unloaded.]")
+                return@flow
+            }
+
             val fullPrompt = buildPrompt(prompt, systemPrompt)
             val effectiveConfig = applyPerformanceMode(config)
 
@@ -113,9 +131,10 @@ class AiEngine @Inject constructor(
                     emit("[Error: ${tokensResult.exceptionOrNull()?.message}]")
                 }
             } else {
-                emit("[AI Engine: Native library not available. " +
-                     "Please ensure llama.cpp is compiled for your device architecture.]")
+                emit("[Error: Native context not available. Please reload the model.]")
             }
+        } catch (e: Exception) {
+            emit("[Error: ${e.message}]")
         } finally {
             inferenceMutex.unlock()
         }
@@ -123,17 +142,9 @@ class AiEngine @Inject constructor(
 
     private fun applyPerformanceMode(config: InferenceConfig): InferenceConfig {
         return when (config.performanceMode) {
-            PerformanceMode.FAST -> config.copy(
-                temperature = 0.9f,
-                topP = 0.95f,
-                maxTokens = 1024
-            )
+            PerformanceMode.FAST -> config.copy(temperature = 0.9f, topP = 0.95f, maxTokens = 1024)
             PerformanceMode.BALANCED -> config
-            PerformanceMode.HIGH_QUALITY -> config.copy(
-                temperature = 0.3f,
-                topP = 0.85f,
-                maxTokens = 4096
-            )
+            PerformanceMode.HIGH_QUALITY -> config.copy(temperature = 0.3f, topP = 0.85f, maxTokens = 4096)
         }
     }
 
@@ -146,6 +157,10 @@ class AiEngine @Inject constructor(
 
     fun unloadModel() {
         stopGeneration()
+        unloadModelInternal()
+    }
+
+    private fun unloadModelInternal() {
         if (LlamaBridge.isNativeAvailable()) {
             LlamaBridge.freeContext()
         }
@@ -170,7 +185,4 @@ enum class ModelError {
     OUT_OF_MEMORY, NATIVE_ERROR, LOAD_FAILED, UNSUPPORTED_FORMAT
 }
 
-class ModelException(
-    message: String,
-    val error: ModelError
-) : Exception(message)
+class ModelException(message: String, val error: ModelError) : Exception(message)
