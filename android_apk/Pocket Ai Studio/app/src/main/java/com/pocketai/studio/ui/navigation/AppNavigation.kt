@@ -1,6 +1,7 @@
 package com.pocketai.studio.ui.navigation
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -33,6 +34,8 @@ import com.pocketai.studio.ui.texttools.TextToolsScreen
 import com.pocketai.studio.ui.texttools.TextToolsViewModel
 
 data class BottomNavItem(val route: String, val label: String, val icon: ImageVector)
+
+private const val ANIM_DURATION = 250
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,7 +79,31 @@ fun AppNavigation() {
         NavHost(
             navController = navController,
             startDestination = NavRoutes.Home.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(innerPadding),
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it / 3 },
+                    animationSpec = tween(ANIM_DURATION)
+                ) + fadeIn(animationSpec = tween(ANIM_DURATION))
+            },
+            exitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { -it / 3 },
+                    animationSpec = tween(ANIM_DURATION)
+                ) + fadeOut(animationSpec = tween(ANIM_DURATION))
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { -it / 3 },
+                    animationSpec = tween(ANIM_DURATION)
+                ) + fadeIn(animationSpec = tween(ANIM_DURATION))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it / 3 },
+                    animationSpec = tween(ANIM_DURATION)
+                ) + fadeOut(animationSpec = tween(ANIM_DURATION))
+            }
         ) {
             composable(NavRoutes.Home.route) {
                 val viewModel: HomeViewModel = hiltViewModel()
@@ -85,6 +112,7 @@ fun AppNavigation() {
                     onNavigateToChat = { chatId -> navController.navigate(NavRoutes.Chat.createRoute(chatId)) },
                     onNavigateToNewChat = { navController.navigate(NavRoutes.NewChat.route) },
                     onNavigateToModels = { navController.navigate(NavRoutes.Models.route) },
+                    onNavigateToSettings = { navController.navigate(NavRoutes.Settings.route) },
                     onNavigateToPdf = { navController.navigate(NavRoutes.PdfAssistant.route) },
                     onNavigateToOcr = { navController.navigate(NavRoutes.Ocr.route) },
                     onNavigateToTextTools = { navController.navigate(NavRoutes.TextTools.route) }

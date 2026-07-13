@@ -1,6 +1,7 @@
 package com.pocketai.studio.ai.modelmanager
 
 import android.content.Context
+import android.net.Uri
 import com.pocketai.studio.domain.model.AiModel
 import com.pocketai.studio.domain.model.DownloadStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -205,6 +206,49 @@ class ModelManager @Inject constructor(
                 return@withContext Result.failure(Exception("A model with this name already exists"))
             }
             sourceFile.copyTo(targetFile, overwrite = false)
+            val model = fileToModel(targetFile)
+            Result.success(model)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun importModelFromUri(uri: Uri): Result<AiModel> = withContext(Dispatchers.IO) {
+        try {
+            val contentResolver = context.contentResolver
+            val inputStream = contentResolver.openInputStream(uri)
+                ?: return@withContext Result.failure(Exception("Cannot open file"))
+
+            // Try to get filename from URI
+            val cursor = contentResolver.query(uri, null, null, null, null)
+            val fileName = cursor?.use {
+                if (it.moveToFirst()) {
+                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) it.getString(nameIndex) else null
+                } else null
+            } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "imported_model.gguf"
+
+            if (!fileName.endsWith(".gguf", ignoreCase = true)) {
+                inputStream.close()
+                return@withContext Result.failure(Exception("Unsupported format. Only GGUF files are supported."))
+            }
+
+            val targetFile = File(modelsDir, fileName)
+            if (targetFile.exists()) {
+                inputStream.close()
+                return@withContext Result.failure(Exception("A model with this name already exists"))
+            }
+
+            FileOutputStream(targetFile).use { output ->
+                inputStream.copyTo(output)
+            }
+            inputStream.close()
+
+            if (targetFile.length() == 0L) {
+                targetFile.delete()
+                return@withContext Result.failure(Exception("Imported file is empty"))
+            }
+
             val model = fileToModel(targetFile)
             Result.success(model)
         } catch (e: Exception) {

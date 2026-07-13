@@ -1,13 +1,13 @@
 package com.pocketai.studio.ui.modelmanager
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pocketai.studio.ai.engine.AiEngine
 import com.pocketai.studio.ai.modelmanager.ModelManager
 import com.pocketai.studio.domain.model.AiModel
+import com.pocketai.studio.domain.model.DownloadStatus
 import com.pocketai.studio.domain.model.InferenceConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -20,7 +20,9 @@ data class ModelManagerUiState(
     val availableModels: List<AiModel> = emptyList(),
     val isLoading: Boolean = true,
     val loadedModelName: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    val downloadProgress: Map<String, Float> = emptyMap(),
+    val downloadStatus: Map<String, DownloadStatus> = emptyMap()
 )
 
 @HiltViewModel
@@ -36,6 +38,22 @@ class ModelManagerViewModel @Inject constructor(
     init {
         loadModels()
         _uiState.update { it.copy(loadedModelName = aiEngine.getCurrentModelName()) }
+
+        // Collect download progress and status from ModelManager
+        viewModelScope.launch {
+            modelManager.downloadProgress.collect { progress ->
+                _uiState.update { it.copy(downloadProgress = progress) }
+            }
+        }
+        viewModelScope.launch {
+            modelManager.downloadStatus.collect { status ->
+                _uiState.update { it.copy(downloadStatus = status) }
+                // Refresh installed models when a download completes
+                if (status.values.any { it == DownloadStatus.COMPLETED }) {
+                    loadModels()
+                }
+            }
+        }
     }
 
     private fun loadModels() {
@@ -48,9 +66,24 @@ class ModelManagerViewModel @Inject constructor(
     }
 
     fun downloadModel(model: AiModel) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(model.downloadUrl))
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        modelManager.downloadModel(model)
+    }
+
+    fun cancelDownload(modelId: String) {
+        modelManager.cancelDownload(modelId)
+    }
+
+    fun importModel(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(message = "Importing model...") }
+            val result = modelManager.importModelFromUri(uri)
+            result.onSuccess { model ->
+                _uiState.update { it.copy(message = "Imported: ${model.name}") }
+                loadModels()
+            }.onFailure { e ->
+                _uiState.update { it.copy(message = "Import failed: ${e.message}") }
+            }
+        }
     }
 
     fun loadModel(model: AiModel) {

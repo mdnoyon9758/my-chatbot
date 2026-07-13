@@ -110,6 +110,10 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(isGenerating = false) }
     }
 
+    fun selectModel(modelName: String) {
+        _uiState.update { it.copy(selectedModel = modelName) }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
