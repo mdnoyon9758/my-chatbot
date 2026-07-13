@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.pocketai.studio.ai.engine.AiEngine
 import com.pocketai.studio.ai.modelmanager.ModelManager
 import com.pocketai.studio.domain.model.Attachment
@@ -16,9 +19,15 @@ import com.pocketai.studio.domain.repository.ChatRepository
 import com.pocketai.studio.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import javax.inject.Inject
+import kotlin.coroutines.resume
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -61,6 +70,11 @@ class ChatViewModel @Inject constructor(
                     selectedModel = models.firstOrNull()?.name ?: ""
                 )
             }
+            // Auto-load the first model if none is loaded
+            if (!aiEngine.isModelLoaded() && models.isNotEmpty()) {
+                val firstModel = models.first()
+                aiEngine.loadModel(firstModel.filePath ?: "", inferenceConfig)
+            }
         }
     }
 
@@ -80,6 +94,14 @@ class ChatViewModel @Inject constructor(
 
     fun selectModel(modelName: String) {
         _uiState.update { it.copy(selectedModel = modelName) }
+        // Load the selected model if not already loaded
+        viewModelScope.launch {
+            val models = modelManager.getInstalledModels()
+            val model = models.find { it.name == modelName }
+            if (model != null && aiEngine.getCurrentModelName() != model.name) {
+                aiEngine.loadModel(model.filePath ?: "", inferenceConfig)
+            }
+        }
     }
 
     fun attachImage(uri: Uri) {
@@ -111,7 +133,6 @@ class ChatViewModel @Inject constructor(
                 session.id
             } else chatId
 
-            // Save user message with attachment
             chatRepository.insertMessage(
                 sessionId, "USER", text,
                 attachments = if (attachment != null) listOf(attachment) else emptyList()
@@ -120,13 +141,9 @@ class ChatViewModel @Inject constructor(
 
             try {
                 when {
-                    // Slash commands for text tools
                     isSlashCommand -> handleSlashCommand(sessionId, text)
-                    // Image attachment → OCR
                     attachment?.type == AttachmentType.IMAGE -> handleImageAttachment(sessionId, text, attachment)
-                    // PDF attachment → extract and answer
                     attachment?.type == AttachmentType.PDF -> handlePdfAttachment(sessionId, text, attachment)
-                    // Normal chat
                     else -> handleNormalChat(sessionId, text)
                 }
             } catch (e: Exception) {
@@ -138,7 +155,7 @@ class ChatViewModel @Inject constructor(
     }
 
     private suspend fun handleNormalChat(sessionId: String, text: String) {
-        val systemPrompt = "You are Pocket AI, a helpful local AI assistant. Be concise and accurate. You can help with text tasks, answer questions, and process files."
+        val systemPrompt = "You are Pocket AI, a helpful local AI assistant. Be concise and accurate."
         var fullResponse = ""
         var tokenCount = 0
 
@@ -185,29 +202,99 @@ class ChatViewModel @Inject constructor(
     private suspend fun handleImageAttachment(sessionId: String, text: String, attachment: Attachment) {
         _uiState.update { it.copy(isProcessingAttachment = true) }
 
-        // For now, include a note about the image in the prompt
-        // In production, this would run OCR via ML Kit
-        val prompt = buildString {
-            append("[Image attached: ${attachment.name}]\n")
-            if (text.isNotBlank()) append(text) else append("Describe what you see in this image.")
-        }
+        try {
+            val imageUri = Uri.parse(attachment.uri)
+            val extractedText = withContext(Dispatchers.IO) {
+                performOcr(imageUri)
+            }
 
-        _uiState.update { it.copy(isProcessingAttachment = false) }
-        handleNormalChat(sessionId, prompt)
+            val prompt = buildString {
+                if (extractedText.isNotBlank()) {
+                    append("Text extracted from image '${attachment.name}':\n\n")
+                    append(extractedText)
+                    append("\n\n")
+                } else {
+                    append("[Image: ${attachment.name} - no text could be extracted]\n\n")
+                }
+                if (text.isNotBlank()) append(text) else append("Analyze this text.")
+            }
+
+            _uiState.update { it.copy(isProcessingAttachment = false) }
+            handleNormalChat(sessionId, prompt)
+        } catch (e: Exception) {
+            _uiState.update { it.copy(isProcessingAttachment = false, error = "OCR failed: ${e.message}") }
+        }
+    }
+
+    private suspend fun performOcr(uri: Uri): String = suspendCancellableCoroutine { cont ->
+        try {
+            val image = InputImage.fromFilePath(context, uri)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+            recognizer.process(image)
+                .addOnSuccessListener { result ->
+                    cont.resume(result.text)
+                    recognizer.close()
+                }
+                .addOnFailureListener { e ->
+                    cont.resume("")
+                    recognizer.close()
+                }
+        } catch (e: Exception) {
+            cont.resume("")
+        }
     }
 
     private suspend fun handlePdfAttachment(sessionId: String, text: String, attachment: Attachment) {
         _uiState.update { it.copy(isProcessingAttachment = true) }
 
-        // For now, include a note about the PDF in the prompt
-        // In production, this would extract PDF content via iText
-        val prompt = buildString {
-            append("[PDF attached: ${attachment.name}]\n")
-            if (text.isNotBlank()) append(text) else append("What is this document about?")
-        }
+        try {
+            val pdfUri = Uri.parse(attachment.uri)
+            val extractedText = withContext(Dispatchers.IO) {
+                extractPdfText(pdfUri)
+            }
 
-        _uiState.update { it.copy(isProcessingAttachment = false) }
-        handleNormalChat(sessionId, prompt)
+            val prompt = buildString {
+                if (extractedText.isNotBlank()) {
+                    val truncated = if (extractedText.length > 8000) {
+                        extractedText.take(8000) + "\n\n[...truncated]"
+                    } else {
+                        extractedText
+                    }
+                    append("Content from PDF '${attachment.name}':\n\n")
+                    append(truncated)
+                    append("\n\n")
+                } else {
+                    append("[PDF: ${attachment.name} - no text could be extracted]\n\n")
+                }
+                if (text.isNotBlank()) append(text) else append("What is this document about?")
+            }
+
+            _uiState.update { it.copy(isProcessingAttachment = false) }
+            handleNormalChat(sessionId, prompt)
+        } catch (e: Exception) {
+            _uiState.update { it.copy(isProcessingAttachment = false, error = "PDF extraction failed: ${e.message}") }
+        }
+    }
+
+    private fun extractPdfText(uri: Uri): String {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+                ?: return "Could not open PDF file"
+
+            val reader = BufferedReader(InputStreamReader(inputStream))
+            val text = reader.readText()
+            reader.close()
+            inputStream.close()
+
+            if (text.isBlank() || text.length < 10) {
+                "PDF appears to be image-based or empty."
+            } else {
+                text
+            }
+        } catch (e: Exception) {
+            "Error reading PDF: ${e.message}"
+        }
     }
 
     fun stopGeneration() {
