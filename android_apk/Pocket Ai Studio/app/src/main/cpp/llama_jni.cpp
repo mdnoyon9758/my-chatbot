@@ -33,6 +33,7 @@ struct InferenceContext {
 static llama_sampler *create_sampler(float temperature, float top_p) {
     auto params = llama_sampler_chain_default_params();
     auto *smpl = llama_sampler_chain_init(params);
+    if (!smpl) return nullptr;
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
     return smpl;
@@ -46,6 +47,7 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeCreateContext(
         jint contextSize, jint threads, jboolean useGpu) {
 
     std::string path = fromJString(env, modelPath);
+    if (path.empty()) return 0;
 
     static bool backend_initialized = false;
     if (!backend_initialized) {
@@ -90,7 +92,7 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluate(
         jint maxTokens, jfloat temperature, jfloat topP) {
 
     auto *ictx = reinterpret_cast<InferenceContext *>(contextPtr);
-    if (!ictx || !ictx->ctx) return toJString(env, "[Error: invalid context]");
+    if (!ictx || !ictx->ctx || !ictx->vocab) return toJString(env, "[Error: invalid context]");
 
     ictx->stop_requested = false;
     ictx->token_count = 0;
@@ -98,19 +100,23 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluate(
     // Recreate sampler with requested params
     if (ictx->sampler) llama_sampler_free(ictx->sampler);
     ictx->sampler = create_sampler(temperature, topP);
+    if (!ictx->sampler) return toJString(env, "[Error: failed to create sampler]");
 
     std::string input = fromJString(env, prompt);
+    if (input.empty()) return toJString(env, "[Error: empty prompt]");
 
     int32_t n_tokens = -llama_tokenize(ictx->vocab, input.c_str(), (int32_t)input.size(),
                                         nullptr, 0, true, true);
     if (n_tokens <= 0) return toJString(env, "[Error: failed to tokenize]");
 
     auto *tokens = (llama_token *)malloc(sizeof(llama_token) * n_tokens);
+    if (!tokens) return toJString(env, "[Error: out of memory]");
     llama_tokenize(ictx->vocab, input.c_str(), (int32_t)input.size(),
                    tokens, n_tokens, true, true);
 
     std::string result;
     llama_batch batch = llama_batch_init(512, 0, 1);
+    if (!batch.token) { free(tokens); return toJString(env, "[Error: batch alloc failed]"); }
 
     // Evaluate prompt tokens
     for (int32_t i = 0; i < n_tokens && !ictx->stop_requested; i++) {
@@ -161,26 +167,30 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeEvaluateStream(
     auto *ictx = reinterpret_cast<InferenceContext *>(contextPtr);
     jclass strCls = env->FindClass("java/lang/String");
 
-    if (!ictx || !ictx->ctx) return env->NewObjectArray(0, strCls, nullptr);
+    if (!ictx || !ictx->ctx || !ictx->vocab) return env->NewObjectArray(0, strCls, nullptr);
 
     ictx->stop_requested = false;
     ictx->token_count = 0;
 
     if (ictx->sampler) llama_sampler_free(ictx->sampler);
     ictx->sampler = create_sampler(temperature, topP);
+    if (!ictx->sampler) return env->NewObjectArray(0, strCls, nullptr);
 
     std::string input = fromJString(env, prompt);
+    if (input.empty()) return env->NewObjectArray(0, strCls, nullptr);
 
     int32_t n_tokens = -llama_tokenize(ictx->vocab, input.c_str(), (int32_t)input.size(),
                                         nullptr, 0, true, true);
     if (n_tokens <= 0) return env->NewObjectArray(0, strCls, nullptr);
 
     auto *tokens = (llama_token *)malloc(sizeof(llama_token) * n_tokens);
+    if (!tokens) return env->NewObjectArray(0, strCls, nullptr);
     llama_tokenize(ictx->vocab, input.c_str(), (int32_t)input.size(),
                    tokens, n_tokens, true, true);
 
     std::vector<std::string> tokenStrings;
     llama_batch batch = llama_batch_init(512, 0, 1);
+    if (!batch.token) { free(tokens); return env->NewObjectArray(0, strCls, nullptr); }
 
     for (int32_t i = 0; i < n_tokens && !ictx->stop_requested; i++) {
         batch.token[0] = tokens[i];

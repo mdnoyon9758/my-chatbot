@@ -1,17 +1,17 @@
 package com.pocketai.studio.ai.jni
 
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
 /**
  * JNI bridge to llama.cpp native library.
- * This provides the interface to the compiled llama.cpp shared library
- * for GGUF model inference on Android.
- *
- * The native library (libllama.so) is loaded at runtime.
- * All inference runs on background threads via coroutines.
+ * Thread-safe: all native calls are serialized via a ReentrantLock.
  */
 object LlamaBridge {
 
     private var nativeLoaded = false
     private var nativeContextPtr: Long = 0
+    private val lock = ReentrantLock()
 
     init {
         try {
@@ -59,12 +59,12 @@ object LlamaBridge {
         contextSize: Int = 4096,
         threads: Int = 4,
         useGpu: Boolean = false
-    ): Result<Unit> {
-        return try {
+    ): Result<Unit> = lock.withLock {
+        try {
             if (!nativeLoaded) {
-                return Result.failure(Exception("Native library not loaded"))
+                return@withLock Result.failure(Exception("Native library not loaded"))
             }
-            freeContext()
+            freeContextLocked()
             nativeContextPtr = nativeCreateContext(modelPath, contextSize, threads, useGpu)
             if (nativeContextPtr == 0L) {
                 Result.failure(Exception("Failed to create inference context"))
@@ -76,10 +76,10 @@ object LlamaBridge {
         }
     }
 
-    fun evaluate(prompt: String, maxTokens: Int = 2048, temperature: Float = 0.7f, topP: Float = 0.9f): Result<String> {
-        return try {
+    fun evaluate(prompt: String, maxTokens: Int = 2048, temperature: Float = 0.7f, topP: Float = 0.9f): Result<String> = lock.withLock {
+        try {
             if (nativeContextPtr == 0L) {
-                return Result.failure(Exception("No active model context"))
+                return@withLock Result.failure(Exception("No active model context"))
             }
             val result = nativeEvaluate(nativeContextPtr, prompt, maxTokens, temperature, topP)
             Result.success(result)
@@ -93,10 +93,10 @@ object LlamaBridge {
         maxTokens: Int = 2048,
         temperature: Float = 0.7f,
         topP: Float = 0.9f
-    ): Result<List<String>> {
-        return try {
+    ): Result<List<String>> = lock.withLock {
+        try {
             if (nativeContextPtr == 0L) {
-                return Result.failure(Exception("No active model context"))
+                return@withLock Result.failure(Exception("No active model context"))
             }
             val tokens = nativeEvaluateStream(nativeContextPtr, prompt, maxTokens, temperature, topP)
             Result.success(tokens.toList())
@@ -105,7 +105,7 @@ object LlamaBridge {
         }
     }
 
-    fun stopEvaluate() {
+    fun stopEvaluate() = lock.withLock {
         if (nativeContextPtr != 0L) {
             try {
                 nativeStopEvaluate(nativeContextPtr)
@@ -113,7 +113,11 @@ object LlamaBridge {
         }
     }
 
-    fun freeContext() {
+    fun freeContext() = lock.withLock {
+        freeContextLocked()
+    }
+
+    private fun freeContextLocked() {
         if (nativeContextPtr != 0L) {
             try {
                 nativeFreeContext(nativeContextPtr)
@@ -122,11 +126,11 @@ object LlamaBridge {
         }
     }
 
-    fun getTokenCount(): Int {
-        return if (nativeContextPtr != 0L) {
+    fun getTokenCount(): Int = lock.withLock {
+        if (nativeContextPtr != 0L) {
             try { nativeGetTokenCount(nativeContextPtr) } catch (_: Exception) { 0 }
         } else 0
     }
 
-    fun isContextActive(): Boolean = nativeContextPtr != 0L
+    fun isContextActive(): Boolean = lock.withLock { nativeContextPtr != 0L }
 }

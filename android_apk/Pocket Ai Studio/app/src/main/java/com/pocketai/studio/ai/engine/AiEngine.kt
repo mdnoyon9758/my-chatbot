@@ -6,10 +6,11 @@ import com.pocketai.studio.domain.model.InferenceConfig
 import com.pocketai.studio.domain.model.PerformanceMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,8 +22,9 @@ class AiEngine @Inject constructor(
     private var isLoaded = false
     private var currentModelPath: String? = null
     private var currentModelName: String? = null
-    private var generationJob: Job? = null
     private var _tokenCount: Int = 0
+    private val inferenceMutex = Mutex()
+    private var stopRequested = false
 
     val tokenCount: Int get() = _tokenCount
 
@@ -82,30 +84,40 @@ class AiEngine @Inject constructor(
             return@flow
         }
 
-        _tokenCount = 0
-        val fullPrompt = buildPrompt(prompt, systemPrompt)
+        // Prevent concurrent inference
+        if (!inferenceMutex.tryLock()) {
+            emit("[Error: Already generating a response. Please wait or stop the current generation.]")
+            return@flow
+        }
 
-        // Apply performance mode overrides
-        val effectiveConfig = applyPerformanceMode(config)
+        try {
+            _tokenCount = 0
+            stopRequested = false
+            val fullPrompt = buildPrompt(prompt, systemPrompt)
+            val effectiveConfig = applyPerformanceMode(config)
 
-        if (LlamaBridge.isNativeAvailable() && LlamaBridge.isContextActive()) {
-            val tokensResult = LlamaBridge.evaluateStream(
-                prompt = fullPrompt,
-                maxTokens = effectiveConfig.maxTokens,
-                temperature = effectiveConfig.temperature,
-                topP = effectiveConfig.topP
-            )
-            if (tokensResult.isSuccess) {
-                for (token in tokensResult.getOrThrow()) {
-                    emit(token)
-                    _tokenCount++
+            if (LlamaBridge.isNativeAvailable() && LlamaBridge.isContextActive()) {
+                val tokensResult = LlamaBridge.evaluateStream(
+                    prompt = fullPrompt,
+                    maxTokens = effectiveConfig.maxTokens,
+                    temperature = effectiveConfig.temperature,
+                    topP = effectiveConfig.topP
+                )
+                if (tokensResult.isSuccess) {
+                    for (token in tokensResult.getOrThrow()) {
+                        if (stopRequested) break
+                        emit(token)
+                        _tokenCount++
+                    }
+                } else {
+                    emit("[Error: ${tokensResult.exceptionOrNull()?.message}]")
                 }
             } else {
-                emit("[Error: ${tokensResult.exceptionOrNull()?.message}]")
+                emit("[AI Engine: Native library not available. " +
+                     "Please ensure llama.cpp is compiled for your device architecture.]")
             }
-        } else {
-            emit("[AI Engine: Native library not available. " +
-                 "Please ensure llama.cpp is compiled for your device architecture.]")
+        } finally {
+            inferenceMutex.unlock()
         }
     }.flowOn(Dispatchers.IO)
 
@@ -126,7 +138,7 @@ class AiEngine @Inject constructor(
     }
 
     fun stopGeneration() {
-        generationJob?.cancel()
+        stopRequested = true
         if (LlamaBridge.isNativeAvailable()) {
             LlamaBridge.stopEvaluate()
         }
