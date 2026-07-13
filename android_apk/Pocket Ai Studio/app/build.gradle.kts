@@ -14,8 +14,8 @@ android {
         applicationId = "com.pocketai.studio"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -46,6 +46,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
         }
         debug {
             isMinifyEnabled = false
@@ -129,7 +132,6 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Markdown
-    implementation("com.github.jeziellago:compose-markdown:0.5.2")
 
     // OkHttp for downloads
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
