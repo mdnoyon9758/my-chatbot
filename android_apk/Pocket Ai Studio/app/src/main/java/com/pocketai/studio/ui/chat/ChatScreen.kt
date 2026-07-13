@@ -6,21 +6,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -29,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pocketai.studio.domain.model.ChatMessage
 import com.pocketai.studio.domain.model.MessageRole
+import dev.jeziellago.compose.markdowntext.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,7 +85,6 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    // Model selector for new chats
                     if (chatId == null && uiState.availableModels.isNotEmpty()) {
                         var expanded by remember { mutableStateOf(false) }
                         TextButton(onClick = { expanded = true }) {
@@ -117,6 +113,35 @@ fun ChatScreen(
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    // Context limit warning
+                    if (uiState.messages.size > 10) {
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "Long conversations may reduce response quality",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+                    }
+
                     // Pending attachment chip
                     uiState.pendingAttachment?.let { attachment ->
                         Row(
@@ -163,7 +188,6 @@ fun ChatScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        // Attachment button
                         Box {
                             IconButton(
                                 onClick = { showAttachmentMenu = true },
@@ -253,12 +277,7 @@ fun ChatScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (uiState.messages.isEmpty() && !uiState.isGenerating) {
-                // Welcome screen
-                WelcomeScreen(
-                    onSuggestionClick = { suggestion ->
-                        inputText = suggestion
-                    }
-                )
+                WelcomeScreen(onSuggestionClick = { suggestion -> inputText = suggestion })
             } else {
                 LazyColumn(
                     state = listState,
@@ -284,9 +303,7 @@ fun ChatScreen(
                         }
                     }
                     if (uiState.isGenerating && uiState.currentResponse.isBlank()) {
-                        item {
-                            TypingIndicator()
-                        }
+                        item { TypingIndicator() }
                     }
                 }
             }
@@ -297,13 +314,9 @@ fun ChatScreen(
                         .align(Alignment.TopCenter)
                         .padding(16.dp),
                     action = {
-                        TextButton(onClick = { viewModel.clearError() }) {
-                            Text("Dismiss")
-                        }
+                        TextButton(onClick = { viewModel.clearError() }) { Text("Dismiss") }
                     }
-                ) {
-                    Text(error)
-                }
+                ) { Text(error) }
             }
         }
     }
@@ -373,7 +386,6 @@ private fun MessageBubble(message: ChatMessage) {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
-        // Sender label
         Text(
             text = if (isUser) "You" else "Pocket AI",
             style = MaterialTheme.typography.labelSmall,
@@ -381,7 +393,6 @@ private fun MessageBubble(message: ChatMessage) {
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
         )
 
-        // Show attachment if present
         if (message.attachments.isNotEmpty()) {
             Row(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
@@ -421,7 +432,6 @@ private fun MessageBubble(message: ChatMessage) {
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                // Tool used badge
                 message.toolUsed?.let { tool ->
                     Surface(
                         shape = MaterialTheme.shapes.extraSmall,
@@ -439,14 +449,24 @@ private fun MessageBubble(message: ChatMessage) {
                     Spacer(modifier = Modifier.height(6.dp))
                 }
 
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser)
-                        MaterialTheme.colorScheme.onPrimary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Use markdown rendering for AI messages, plain text for user messages
+                if (!isUser && !message.isStreaming) {
+                    MarkdownText(
+                        markdown = message.content,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                } else {
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isUser)
+                            MaterialTheme.colorScheme.onPrimary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 if (!isUser && message.content.isNotBlank() && !message.isStreaming) {
                     Spacer(modifier = Modifier.height(6.dp))
