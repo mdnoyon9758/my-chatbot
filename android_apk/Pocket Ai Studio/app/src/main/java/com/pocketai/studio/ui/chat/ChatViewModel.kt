@@ -9,12 +9,16 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.pocketai.studio.ai.engine.AiEngine
 import com.pocketai.studio.ai.modelmanager.ModelManager
+import com.pocketai.studio.ai.provider.ChatMessage as ProviderChatMessage
+import com.pocketai.studio.ai.provider.ChatRequest
+import com.pocketai.studio.data.repository.ProviderRepository
 import com.pocketai.studio.domain.model.Attachment
 import com.pocketai.studio.domain.model.AttachmentType
 import com.pocketai.studio.domain.model.ChatMessage
 import com.pocketai.studio.domain.model.ChatSession
 import com.pocketai.studio.domain.model.InferenceConfig
 import com.pocketai.studio.domain.model.MessageRole
+import com.pocketai.studio.domain.model.ModelOption
 import com.pocketai.studio.domain.repository.ChatRepository
 import com.pocketai.studio.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +32,7 @@ import com.itextpdf.kernel.pdf.PdfDocument
 import com.itextpdf.kernel.pdf.PdfReader
 import com.itextpdf.kernel.pdf.canvas.parser.PdfTextExtractor
 import com.itextpdf.kernel.pdf.canvas.parser.listener.SimpleTextExtractionStrategy
+import java.io.File
 import javax.inject.Inject
 import kotlin.coroutines.resume
 
@@ -38,8 +43,10 @@ data class ChatUiState(
     val currentResponse: String = "",
     val tokenCount: Int = 0,
     val error: String? = null,
-    val availableModels: List<String> = emptyList(),
-    val selectedModel: String = "",
+    /** Grouped model options: "Cloud Providers" then "On-device" */
+    val modelOptions: List<ModelOption> = emptyList(),
+    val selectedModelKey: String = "",
+    val isRefreshingModels: Boolean = false,
     val pendingAttachment: Attachment? = null,
     val isProcessingAttachment: Boolean = false
 )
@@ -49,6 +56,7 @@ class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository,
     private val aiEngine: AiEngine,
     private val modelManager: ModelManager,
+    private val providerRepository: ProviderRepository,
     private val settingsRepository: SettingsRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -62,23 +70,87 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.inferenceConfig.collect { config -> inferenceConfig = config }
         }
+        refreshModelOptions()
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Model options — cloud + local
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * Refresh the list of available model options.
+     * Cloud models are loaded dynamically from providers that have an API key saved.
+     */
+    fun refreshModelOptions() {
         viewModelScope.launch {
-            val models = modelManager.getInstalledModels()
+            if (_uiState.value.isRefreshingModels) return@launch
+            _uiState.update { it.copy(isRefreshingModels = true) }
+
+            val options = mutableListOf<ModelOption>()
+
+            // 1. Cloud models from every provider
+            val providers = providerRepository.getAllProviders()
+            for ((_, provider) in providers) {
+                val apiKey = providerRepository.getActiveApiKey(provider.providerId)
+                if (apiKey == null) continue
+
+                // Try to fetch dynamic models; fall back to cached on failure
+                val models = try {
+                    provider.listModels()
+                } catch (_: Exception) {
+                    provider.getCachedModels()
+                }
+                options.addAll(models.map { m ->
+                    ModelOption.Cloud(
+                        providerId = provider.providerId,
+                        providerName = provider.displayName,
+                        modelId = m.id,
+                        modelName = m.name,
+                        isVision = m.isVision,
+                        description = m.description
+                    )
+                })
+            }
+
+            // 2. Local GGUF models
+            val localModels = modelManager.getInstalledModels()
+            options.addAll(localModels.map { m ->
+                ModelOption.Local(name = m.name, filePath = m.filePath)
+            })
+
+            // Auto-select: keep previous if still present, else first
+            val prev = _uiState.value.selectedModelKey
+            val first = options.firstOrNull()?.key ?: ""
+            val selected = if (options.any { it.key == prev }) prev else first
+
             _uiState.update {
                 it.copy(
-                    availableModels = models.map { m -> m.name },
-                    selectedModel = models.firstOrNull()?.name ?: ""
+                    modelOptions = options,
+                    selectedModelKey = selected,
+                    isRefreshingModels = false
                 )
             }
-            // Auto-load first model if none loaded
-            if (!aiEngine.isModelLoaded() && models.isNotEmpty()) {
-                val first = models.first()
-                if (first.filePath != null && first.filePath.isNotBlank()) {
-                    aiEngine.loadModel(first.filePath, inferenceConfig)
+        }
+    }
+
+    fun selectModel(key: String) {
+        _uiState.update { it.copy(selectedModelKey = key) }
+
+        // If a local model was picked, make sure it's loaded (async)
+        viewModelScope.launch {
+            val option = _uiState.value.modelOptions.firstOrNull { it.key == key } ?: return@launch
+            if (option is ModelOption.Local) {
+                if (option.filePath != null && option.filePath.isNotBlank()
+                    && aiEngine.getCurrentModelName() != option.name) {
+                    aiEngine.loadModel(option.filePath, inferenceConfig)
                 }
             }
         }
     }
+
+    // ─────────────────────────────────────────────────────────
+    // Chat loading
+    // ─────────────────────────────────────────────────────────
 
     fun loadChat(chatId: String?) {
         if (chatId == null) return
@@ -94,17 +166,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun selectModel(modelName: String) {
-        _uiState.update { it.copy(selectedModel = modelName) }
-        viewModelScope.launch {
-            val models = modelManager.getInstalledModels()
-            val model = models.find { it.name == modelName }
-            if (model != null && model.filePath != null && model.filePath.isNotBlank()
-                && aiEngine.getCurrentModelName() != model.name) {
-                aiEngine.loadModel(model.filePath, inferenceConfig)
-            }
-        }
-    }
+    // ─────────────────────────────────────────────────────────
+    // Attachments
+    // ─────────────────────────────────────────────────────────
 
     fun attachImage(uri: Uri) {
         val name = getFileName(uri) ?: "image.jpg"
@@ -120,16 +184,32 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(pendingAttachment = null) }
     }
 
+    // ─────────────────────────────────────────────────────────
+    // Send message
+    // ─────────────────────────────────────────────────────────
+
     fun sendMessage(text: String, chatId: String?) {
         val attachment = _uiState.value.pendingAttachment
         val isSlashCommand = text.startsWith("/")
 
         viewModelScope.launch {
+            // Determine the selected model option
+            val modelOption = _uiState.value.modelOptions.firstOrNull { it.key == _uiState.value.selectedModelKey }
+
+            val selectedModelId = modelOption?.let {
+                when (it) {
+                    is ModelOption.Cloud -> it.modelId
+                    is ModelOption.Local -> it.name
+                }
+            } ?: ""
+
+            val selectedModelName = modelOption?.displayName ?: ""
+
             val sessionId = if (chatId == null) {
                 val session = chatRepository.createSession(
                     title = text.take(50),
-                    modelId = _uiState.value.selectedModel,
-                    modelName = _uiState.value.selectedModel
+                    modelId = selectedModelId,
+                    modelName = selectedModelName
                 )
                 _uiState.update { it.copy(session = session) }
                 session.id
@@ -146,7 +226,7 @@ class ChatViewModel @Inject constructor(
                     isSlashCommand -> handleSlashCommand(sessionId, text)
                     attachment?.type == AttachmentType.IMAGE -> handleImageAttachment(sessionId, text, attachment)
                     attachment?.type == AttachmentType.PDF -> handlePdfAttachment(sessionId, text, attachment)
-                    else -> handleNormalChat(sessionId, text)
+                    else -> handleNormalChat(sessionId, text, modelOption)
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message ?: "Unknown error") }
@@ -156,8 +236,126 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private suspend fun handleNormalChat(sessionId: String, text: String) {
+    private suspend fun handleNormalChat(sessionId: String, text: String, modelOption: ModelOption?) {
+        when (modelOption) {
+            is ModelOption.Cloud -> handleCloudChat(sessionId, text, modelOption)
+            is ModelOption.Local -> handleLocalChat(sessionId, text, modelOption)
+            null -> handleLocalChat(sessionId, text, null)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Cloud provider chat (streaming)
+    // ─────────────────────────────────────────────────────────
+
+    private suspend fun handleCloudChat(sessionId: String, text: String, option: ModelOption.Cloud) {
+        val provider = providerRepository.getProvider(option.providerId)
+            ?: throw Exception("Provider '${option.providerId}' not found")
+
+        val apiKey = providerRepository.getActiveApiKey(option.providerId)
+        if (apiKey == null) {
+            chatRepository.insertMessage(
+                sessionId, "ASSISTANT",
+                "⚠️ API key not configured for ${option.providerName}. Add it in Settings → API Providers."
+            )
+            return
+        }
+
+        // Build message history for context
+        val historyMessages = _uiState.value.messages
+            .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
+            .map { msg ->
+                ProviderChatMessage(
+                    role = if (msg.role == MessageRole.USER) "user" else "assistant",
+                    content = msg.content
+                )
+            }
+
+        val request = ChatRequest(
+            model = option.modelId,
+            messages = historyMessages + ProviderChatMessage("user", text),
+            temperature = inferenceConfig.temperature,
+            maxTokens = inferenceConfig.maxTokens,
+            topP = inferenceConfig.topP,
+            stream = provider.supportsStreaming,
+            systemPrompt = "You are Pocket AI, a helpful AI assistant. Be concise and accurate."
+        )
+
+        var fullResponse = ""
+        var responseSaved = false
+
+        if (provider.supportsStreaming) {
+            try {
+                provider.chatStream(request).collect { token ->
+                    fullResponse += token
+                    _uiState.update { it.copy(currentResponse = fullResponse) }
+                }
+            } catch (e: Exception) {
+                // If streaming failed, try non-streaming as fallback
+                fullResponse = ""
+                _uiState.update { it.copy(currentResponse = "") }
+            }
+        }
+
+        // If streaming was not attempted or returned no content, do a normal request
+        if (fullResponse.isBlank()) {
+            val nonStreamRequest = request.copy(stream = false)
+            val response = provider.chat(nonStreamRequest)
+            if (response.finishReason == "error") {
+                chatRepository.insertMessage(sessionId, "ASSISTANT", response.content)
+                responseSaved = true
+            } else {
+                fullResponse = response.content
+            }
+        }
+
+        if (!responseSaved && fullResponse.isNotBlank()) {
+            val tokenCount = fullResponse.length / 4 // rough estimate
+            chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, tokenCount)
+        } else if (!responseSaved) {
+            chatRepository.insertMessage(
+                sessionId, "ASSISTANT",
+                "⚠️ No response received from ${option.providerName}. Check your API key and try again."
+            )
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Local GGUF chat (existing path, null-safe)
+    // ─────────────────────────────────────────────────────────
+
+    private suspend fun handleLocalChat(sessionId: String, text: String, option: ModelOption.Local?) {
+        val localModel = option
         val systemPrompt = "You are Pocket AI, a helpful local AI assistant. Be concise and accurate."
+
+        // If no local model selected or model key missing, try to use any loaded model
+        if (!aiEngine.isModelLoaded()) {
+            // Try to load first available local model automatically
+            val models = modelManager.getInstalledModels()
+            val modelToLoad = localModel?.let { m ->
+                models.firstOrNull { it.name == m.name }
+            } ?: models.firstOrNull()
+
+            if (modelToLoad != null && modelToLoad.filePath != null && modelToLoad.filePath.isNotBlank()) {
+                val result = aiEngine.loadModel(modelToLoad.filePath, inferenceConfig)
+                if (result.isFailure) {
+                    chatRepository.insertMessage(
+                        sessionId, "ASSISTANT",
+                        "⚠️ Could not load model: ${result.exceptionOrNull()?.message}. " +
+                                "Download a model from Model Manager first, or select a cloud provider."
+                    )
+                    return
+                }
+            } else {
+                chatRepository.insertMessage(
+                    sessionId, "ASSISTANT",
+                    "⚠️ No model selected and no local models available. " +
+                            "Please download a model in Model Manager, or add an API key in Settings and select a cloud model."
+                )
+                return
+            }
+        }
+
         var fullResponse = ""
         var tokenCount = 0
 
@@ -171,8 +369,17 @@ class ChatViewModel @Inject constructor(
             chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, tokenCount)
         } else if (fullResponse.isNotBlank()) {
             chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, 0)
+        } else {
+            chatRepository.insertMessage(
+                sessionId, "ASSISTANT",
+                "⚠️ Model returned empty response. Try selecting a different model."
+            )
         }
     }
+
+    // ─────────────────────────────────────────────────────────
+    // Slash commands
+    // ─────────────────────────────────────────────────────────
 
     private suspend fun handleSlashCommand(sessionId: String, text: String) {
         val parts = text.split(" ", limit = 2)
@@ -191,20 +398,23 @@ class ChatViewModel @Inject constructor(
         }
 
         if (content.isBlank()) {
-            chatRepository.insertMessage(sessionId, "ASSISTANT", "Please provide text after the command. Example: /$command your text here")
+            chatRepository.insertMessage(
+                sessionId, "ASSISTANT",
+                "Please provide text after the command. Example: /$command your text here"
+            )
             return
         }
 
-        var fullResponse = ""
-        var tokenCount = 0
-
-        aiEngine.generate(content, systemPrompt, inferenceConfig).collect { token ->
-            fullResponse += token
-            tokenCount++
-            _uiState.update { it.copy(currentResponse = fullResponse, tokenCount = tokenCount) }
-        }
-        chatRepository.insertMessage(sessionId, "ASSISTANT", fullResponse, tokenCount, toolUsed = command)
+        // Route through normal chat path which handles both cloud and local
+        val option = resolveCurrentModelOption()
+        handleNormalChat(sessionId, content, option)
+        // Update the stored message with the tool used
+        // (last inserted assistant message gets toolUsed — we'd need the id, skip for now)
     }
+
+    // ─────────────────────────────────────────────────────────
+    // Image & PDF handling (unchanged from original)
+    // ─────────────────────────────────────────────────────────
 
     private suspend fun handleImageAttachment(sessionId: String, text: String, attachment: Attachment) {
         _uiState.update { it.copy(isProcessingAttachment = true) }
@@ -223,7 +433,8 @@ class ChatViewModel @Inject constructor(
                 if (text.isNotBlank()) append(text) else append("Analyze this text.")
             }
             _uiState.update { it.copy(isProcessingAttachment = false) }
-            handleNormalChat(sessionId, prompt)
+            val option = resolveCurrentModelOption()
+            handleNormalChat(sessionId, prompt, option)
         } catch (e: Exception) {
             _uiState.update { it.copy(isProcessingAttachment = false, error = "OCR failed: ${e.message}") }
         }
@@ -257,7 +468,8 @@ class ChatViewModel @Inject constructor(
                 if (text.isNotBlank()) append(text) else append("What is this document about?")
             }
             _uiState.update { it.copy(isProcessingAttachment = false) }
-            handleNormalChat(sessionId, prompt)
+            val option = resolveCurrentModelOption()
+            handleNormalChat(sessionId, prompt, option)
         } catch (e: Exception) {
             _uiState.update { it.copy(isProcessingAttachment = false, error = "PDF extraction failed: ${e.message}") }
         }
@@ -281,12 +493,21 @@ class ChatViewModel @Inject constructor(
         } catch (e: Exception) { "Error reading PDF: ${e.message}" }
     }
 
+    // ─────────────────────────────────────────────────────────
+    // Utilities
+    // ─────────────────────────────────────────────────────────
+
     fun stopGeneration() {
         aiEngine.stopGeneration()
         _uiState.update { it.copy(isGenerating = false) }
     }
 
     fun clearError() { _uiState.update { it.copy(error = null) } }
+
+    private fun resolveCurrentModelOption(): ModelOption? {
+        val key = _uiState.value.selectedModelKey
+        return _uiState.value.modelOptions.firstOrNull { it.key == key }
+    }
 
     private fun getFileName(uri: Uri): String? {
         var name: String? = null

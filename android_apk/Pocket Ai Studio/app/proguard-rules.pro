@@ -37,3 +37,19 @@
 
 # Keep iText
 -keep class com.itextpdf.** { *; }
+-dontwarn com.itextpdf.bouncycastle.**
+-dontwarn com.itextpdf.bouncycastleconnector.**
+-dontwarn com.itextpdf.barcodes.**
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+-dontwarn org.slf4j.**
+
+# Keep BouncyCastle
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+
+# Keep Jackson (transitive dep from iText)
+-dontwarn com.fasterxml.jackson.**
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn javax.xml.**
+-dontwarn org.xml.sax.**

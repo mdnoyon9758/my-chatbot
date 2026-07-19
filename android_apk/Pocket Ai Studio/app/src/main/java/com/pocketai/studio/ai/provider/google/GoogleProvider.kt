@@ -205,7 +205,22 @@ class GoogleProvider @Inject constructor(
                 if (trimmed.startsWith("data: ")) {
                     val data = trimmed.removePrefix("data: ").trim()
                     if (data.isNotEmpty() && data != "[DONE]") {
-                        emit(data)
+                        // Extract text from the SSE JSON chunk
+                        val text = try {
+                            val root = JsonParser.parseString(data).asJsonObject
+                            val candidates = root.getAsJsonArray("candidates")
+                            if (candidates != null && candidates.size() > 0) {
+                                val candidate = candidates[0].asJsonObject
+                                val content = candidate.getAsJsonObject("content")
+                                val parts = content?.getAsJsonArray("parts")
+                                if (parts != null && parts.size() > 0) {
+                                    parts[0].asJsonObject.get("text")?.asString
+                                } else null
+                            } else null
+                        } catch (_: Exception) { null }
+                        if (text != null && text.isNotEmpty()) {
+                            emit(text)
+                        }
                     }
                 }
             }
