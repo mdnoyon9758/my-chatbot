@@ -94,7 +94,7 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteMessage(id: String) {
-        // Need to get the message first to delete it
+        messageDao.deleteMessageById(id)
     }
 
     override suspend fun deleteMessagesByChatId(chatId: String) = messageDao.deleteMessagesByChatId(chatId)

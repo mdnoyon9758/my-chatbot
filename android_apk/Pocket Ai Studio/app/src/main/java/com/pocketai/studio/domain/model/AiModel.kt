@@ -16,7 +16,16 @@ data class AiModel(
     val isLoaded: Boolean = false,
     val filePath: String? = null,
     val downloadProgress: Float = 0f,
-    val downloadStatus: DownloadStatus = DownloadStatus.NONE
+    val downloadStatus: DownloadStatus = DownloadStatus.NONE,
+    // Cloud model fields
+    val isCloudModel: Boolean = false,
+    val providerId: String? = null,
+    val modelId: String? = null,
+    val contextWindow: Int = 4096,
+    val pricingPer1kInput: Double = 0.0,
+    val pricingPer1kOutput: Double = 0.0,
+    val capabilities: List<String> = listOf("chat"),
+    val isVision: Boolean = false
 )
 
 enum class DownloadStatus {

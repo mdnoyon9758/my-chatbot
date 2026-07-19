@@ -139,6 +139,9 @@ dependencies {
     // Gson
     implementation("com.google.code.gson:gson:2.11.0")
 
+    // Security (encrypted storage)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     // Splash Screen
     implementation("androidx.core:core-splashscreen:1.0.1")
 

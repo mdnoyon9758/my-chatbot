@@ -1,0 +1,7 @@
+/home/codespace/java/current/bin/java
+/usr/local/sdkman/candidates/gradle/current/bin/gradle
+openjdk version "25.0.2" 2026-01-20 LTS
+OpenJDK Runtime Environment Microsoft-13053558 (build 25.0.2+10-LTS)
+OpenJDK 64-Bit Server VM Microsoft-13053558 (build 25.0.2+10-LTS, mixed mode, sharing)
+---
+Linux codespaces-7889ce 6.8.0-1052-azure #58~22.04.1-Ubuntu SMP Thu Mar 26 05:02:21 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux

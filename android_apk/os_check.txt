@@ -1,0 +1,4 @@
+---
+/home/codespace/java/current/bin/java
+/usr/local/sdkman/candidates/gradle/current/bin/gradle
+DONE

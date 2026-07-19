@@ -51,7 +51,7 @@ Java_com_pocketai_studio_ai_jni_LlamaBridge_nativeCreateContext(
     ictx->n_threads = threads;
 
     llama_model_params model_params = llama_model_default_params();
-    (void)useGpu;
+    model_params.n_gpu_layers = useGpu ? 99 : 0; // Offload all layers if GPU enabled
 
     ictx->model = llama_model_load_from_file(path.c_str(), model_params);
     if (!ictx->model) { delete ictx; return 0; }

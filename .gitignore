@@ -29,3 +29,15 @@ releases/
 
 # Compiled object files in cpp dir
 android_apk/Pocket Ai Studio/app/src/main/cpp/build*/
+
+# Agent worktrees
+.claude/worktrees/
+
+# Android native build
+android_apk/Pocket Ai Studio/app/.cxx/
+
+# Android build outputs
+android_apk/Pocket Ai Studio/app/build/
+
+# Heap dumps
+*.hprof

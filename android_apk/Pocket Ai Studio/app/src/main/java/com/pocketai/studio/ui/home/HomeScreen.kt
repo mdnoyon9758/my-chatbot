@@ -26,7 +26,10 @@ fun HomeScreen(
     onNavigateToChat: (String) -> Unit,
     onNavigateToNewChat: () -> Unit,
     onNavigateToModels: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToArena: () -> Unit = {},
+    onNavigateToDocumentChat: () -> Unit = {},
+    onNavigateToProviderSettings: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -103,6 +106,29 @@ fun HomeScreen(
                 }
             }
 
+            // Quick Tools
+            item {
+                Text("AI Tools", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ToolCard("Model Arena", Icons.Filled.CompareArrows, "Compare & rank AI models", { onNavigateToArena() }, Modifier.weight(1f))
+                    ToolCard("Document Chat", Icons.Filled.Description, "Chat with PDFs, Excel, CSV", { onNavigateToDocumentChat() }, Modifier.weight(1f))
+                }
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ToolCard("Text Scanner", Icons.Filled.TextSnippet, "OCR from images", { onNavigateToProviderSettings() }, Modifier.weight(1f))
+                    ToolCard("Text Tools", Icons.Filled.Edit, "Summarize, rewrite, translate", { onNavigateToProviderSettings() }, Modifier.weight(1f))
+                }
+            }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ToolCard("API Providers", Icons.Filled.Key, "Connect OpenAI, Claude, Gemini", { onNavigateToProviderSettings() }, Modifier.weight(1f))
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+
             // Installed Models
             item {
                 Row(
@@ -153,6 +179,18 @@ fun HomeScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ToolCard(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(onClick = onClick, shape = MaterialTheme.shapes.medium, modifier = modifier) {
+        Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(desc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

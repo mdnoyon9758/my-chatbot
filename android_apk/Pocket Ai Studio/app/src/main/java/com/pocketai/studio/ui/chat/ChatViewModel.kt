@@ -24,8 +24,10 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import com.itextpdf.kernel.pdf.PdfDocument
+import com.itextpdf.kernel.pdf.PdfReader
+import com.itextpdf.kernel.pdf.canvas.parser.PdfTextExtractor
+import com.itextpdf.kernel.pdf.canvas.parser.listener.SimpleTextExtractionStrategy
 import javax.inject.Inject
 import kotlin.coroutines.resume
 
@@ -264,10 +266,18 @@ class ChatViewModel @Inject constructor(
     private fun extractPdfText(uri: Uri): String {
         return try {
             val inputStream = context.contentResolver.openInputStream(uri) ?: return "Could not open PDF"
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            val text = reader.readText()
-            reader.close(); inputStream.close()
-            if (text.isBlank() || text.length < 10) "PDF appears to be image-based or empty." else text
+            val reader = com.itextpdf.kernel.pdf.PdfReader(inputStream)
+            val document = com.itextpdf.kernel.pdf.PdfDocument(reader)
+            val text = StringBuilder()
+            for (i in 1..document.numberOfPages) {
+                val strategy = SimpleTextExtractionStrategy()
+                text.append(PdfTextExtractor.getTextFromPage(document.getPage(i), strategy))
+                text.append('\n')
+            }
+            document.close()
+            reader.close()
+            inputStream.close()
+            if (text.isBlank() || text.length < 10) "PDF appears to be image-based or empty." else text.toString()
         } catch (e: Exception) { "Error reading PDF: ${e.message}" }
     }
 

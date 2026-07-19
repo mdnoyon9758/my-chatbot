@@ -1,17 +1,25 @@
 package com.pocketai.studio.ui.ocr
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.pocketai.studio.ai.engine.AiEngine
 import com.pocketai.studio.domain.model.InferenceConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import kotlin.coroutines.resume
 
 data class OcrUiState(
     val extractedText: String = "",
@@ -41,9 +49,21 @@ class OcrViewModel @Inject constructor(
         }
     }
 
-    private fun performOcr(uri: Uri): String {
-        return "Sample extracted text from image.\n\n" +
-               "In production, this would use ML Kit or Tesseract OCR for offline text recognition."
+    private suspend fun performOcr(uri: Uri): String = suspendCancellableCoroutine { cont ->
+        try {
+            val image = InputImage.fromFilePath(context, uri)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            recognizer.process(image)
+                .addOnSuccessListener { result ->
+                    val text = result.text
+                    recognizer.close()
+                    cont.resume(text)
+                }
+                .addOnFailureListener {
+                    recognizer.close()
+                    cont.resume("")
+                }
+        } catch (e: Exception) { cont.resume("") }
     }
 
     fun sendToChat(text: String) {
